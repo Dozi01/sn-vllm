@@ -27,4 +27,3 @@ python x-vars_demo.py
 Follow the instructions on the screen to open the demo dashboard. 
 Select a video from our dataset and ask questions! 🔥
 
-![My Image](Images/offline_demo.png)
