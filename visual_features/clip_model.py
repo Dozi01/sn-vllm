@@ -65,12 +65,13 @@ class CLIPNetwork(torch.nn.Module):
         return out_off.squeeze(), out_act.squeeze(), video_features
 
 if __name__ == "__main__":
-    Clip_model = CLIPNetwork()
+    Clip_model = CLIPNetwork().cuda()
     B = 16
     H = 224
     W = 224
     C = 3
     x = torch.randn(B, C, H, W)
+    x = x.cuda()
     print(f'input video shape : {x.shape}')
     y = Clip_model(x)
     print(f'offence prediction : {y[0].shape}')

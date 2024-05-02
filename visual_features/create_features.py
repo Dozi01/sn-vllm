@@ -62,9 +62,9 @@ def get_spatio_temporal_features(features, num_temporal_tokens=44):
 def get_features(video_path):
     # Foul is mostly at the 3 second (at the 75th frame)
     # default 63
-    start_frame = 71
+    start_frame = 63
     # default 87 to extract 16 frames
-    end_frame = 79
+    end_frame = 87
     fps = 17
     fps_beginning = 25
     factor = (end_frame - start_frame) / (((end_frame - start_frame) / fps_beginning) * fps)
@@ -86,10 +86,9 @@ def get_features(video_path):
                 final_frames = torch.cat((final_frames, frames[j,:,:,:].unsqueeze(0)), 0)
 
     final_frames = final_frames.cuda()
-    print(final_frames.shape)
     
-    out_off, out_act, video_features = model(final_frames)
-
+    with torch.no_grad():
+        out_off, out_act, video_features = model(final_frames)
     preds_sev = torch.argmax(out_off.detach().cpu(), 0)
     preds_act = torch.argmax(out_act.detach().cpu(), 0)
 
@@ -109,9 +108,7 @@ def get_features(video_path):
         values["Severity"] = "5.0"
 
     video_clip_features = get_spatio_temporal_features(video_features.numpy().astype("float16"))
-
     return video_clip_features, values
-
 
 if __name__ == '__main__':
 
@@ -126,9 +123,6 @@ if __name__ == '__main__':
     path_dataset = args.path_dataset
     splits_list = ["Train", "Valid", "Test"]
     image_processor = CLIPImageProcessor.from_pretrained('openai/clip-vit-large-patch14', torch_dtype=torch.float16)
-    """vision_tower = CLIPVisionModel.from_pretrained('openai/clip-vit-large-patch14', torch_dtype=torch.float16,
-                                                    low_cpu_mem_usage=True).cuda()"""
-
 
     model = CLIPNetwork().cuda()
     path_weights = args.path_weights
