@@ -1,18 +1,17 @@
 import os
-from visual_encoder.model import MVNetwork
+from clip_model import CLIPNetwork
 import torch
-from torchvision.io.video import read_video
-from torchvision.models.video import MViT_V2_S_Weights
 import pickle
 import math
 import argparse
 import numpy as np
 from PIL import Image
 from transformers import CLIPVisionModel, CLIPImageProcessor
-from visual_encoder.config.classes import INVERSE_EVENT_DICTIONARY
+from config.classes import INVERSE_EVENT_DICTIONARY
 from decord import VideoReader, cpu
 import json
 import shutil
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 def load_video(vis_path, num_frm=1000):
     vr = VideoReader(vis_path, ctx=cpu(0))
@@ -51,29 +50,27 @@ def get_spatio_temporal_features(features, num_temporal_tokens=44):
     t, s, c = features.shape
 
     temporal_tokens = np.mean(features, axis=1)
-
     padding_size = num_temporal_tokens - t
     if padding_size > 0:
         temporal_tokens = np.pad(temporal_tokens, ((0, padding_size), (0, 0)), mode='constant')
 
     spatial_tokens = np.mean(features, axis=0)
-
-    print(spatial_tokens.shape)
-
     sp_features = np.concatenate([temporal_tokens, spatial_tokens], axis=0)
 
     return sp_features
 
 def get_features(video_path):
     # Foul is mostly at the 3 second (at the 75th frame)
-    start_frame = 63
-    end_frame = 87
+    # default 63
+    start_frame = 71
+    # default 87 to extract 16 frames
+    end_frame = 79
     fps = 17
     fps_beginning = 25
     factor = (end_frame - start_frame) / (((end_frame - start_frame) / fps_beginning) * fps)
     video_frames = load_video(video_path)
     
-    # We only take the frames between 55 and 95 and not the whole video
+    # We only take the frames between start_frame, end_frame and not the whole video
     video_frames = video_frames[start_frame:end_frame]
 
     frames = image_processor.preprocess(video_frames, return_tensors='pt')['pixel_values']
@@ -89,13 +86,9 @@ def get_features(video_path):
                 final_frames = torch.cat((final_frames, frames[j,:,:,:].unsqueeze(0)), 0)
 
     final_frames = final_frames.cuda()
-
     print(final_frames.shape)
     
     out_off, out_act, video_features = model(final_frames)
-
-    print(video_features.shape)
-
 
     preds_sev = torch.argmax(out_off.detach().cpu(), 0)
     preds_act = torch.argmax(out_act.detach().cpu(), 0)
@@ -117,74 +110,75 @@ def get_features(video_path):
 
     video_clip_features = get_spatio_temporal_features(video_features.numpy().astype("float16"))
 
-    exit()
-
     return video_clip_features, values
 
-# ENTER PATH TO DATASET
-path_dataset = "/gpfs/scratch/acad/telim/VARS/dataset"
-splits_list = ["Train", "Valid", "Test"]
-image_processor = CLIPImageProcessor.from_pretrained('openai/clip-vit-large-patch14', torch_dtype=torch.float16)
-"""vision_tower = CLIPVisionModel.from_pretrained('openai/clip-vit-large-patch14', torch_dtype=torch.float16,
-                                                   low_cpu_mem_usage=True).cuda()"""
 
+if __name__ == '__main__':
 
-model = MVNetwork().cuda()
-#model = MVNetwork(net_name=pre_model, agr_type=pooling_type).cuda()
-
-path_weights = "visual_encoder/14_model.pth.tar"
-load = torch.load(path_weights)
-model.load_state_dict(load['state_dict'])
-
-model.eval()
-
-for split in splits_list:
-    path_dataset_split = path_dataset + "/" + split
-    folders = 0
-
-    print(path_dataset_split)
-
-    for _, dirnames, _ in os.walk(path_dataset_split):
-        folders += len(dirnames) 
-
-
-    print(folders)
-
-    data = {}
-    data["Set"] = split
-    actions = {}
+    parser = ArgumentParser(description='my method', formatter_class=ArgumentDefaultsHelpFormatter)
     
-    for i in range(folders):
-        path_clip = path_dataset_split + "/action_" + str(i)
+    parser.add_argument('--path_dataset', type=str, help='Path to the dataset folder', default = '../../SoccerNet1/mvfouls')
+    parser.add_argument('--path_weights', type=str, help='Path to CLIP weights', default = '../visual_encoder/14_model.pth.tar')
 
-        print(path_clip)
+    args = parser.parse_args()
 
-        if os.path.exists(path_clip + "/clip_1.mp4"):  
-            features, values = get_features(path_clip + "/clip_1.mp4")
+    # ENTER PATH TO DATASET
+    path_dataset = args.path_dataset
+    splits_list = ["Train", "Valid", "Test"]
+    image_processor = CLIPImageProcessor.from_pretrained('openai/clip-vit-large-patch14', torch_dtype=torch.float16)
+    """vision_tower = CLIPVisionModel.from_pretrained('openai/clip-vit-large-patch14', torch_dtype=torch.float16,
+                                                    low_cpu_mem_usage=True).cuda()"""
 
-            """with open(path_clip + "/PRE_CLIP_feature_clip_1.pkl", 'wb') as f:
-                pickle.dump(features, f)"""
 
-            actions[path_clip + "/PRE_CLIP_feature_clip_1.pkl"] = values
+    model = CLIPNetwork().cuda()
+    path_weights = args.path_weights
+    load = torch.load(path_weights)
+    model.load_state_dict(load['state_dict'])
 
-        if os.path.exists(path_clip + "/clip_2.mp4"):  
-            features, values = get_features(path_clip + "/clip_2.mp4")
+    model.eval()
 
-            """with open(path_clip + "/PRE_CLIP_feature_clip_2.pkl", 'wb') as f:
-                pickle.dump(features, f)"""
-            
-            actions[path_clip + "/PRE_CLIP_feature_clip_2.pkl"] = values
+    for split in splits_list:
+        path_dataset_split = path_dataset + "/" + split
+        folders = 0
 
-        if os.path.exists(path_clip + "/clip_3.mp4"):  
-            features, values = get_features(path_clip + "/clip_3.mp4")
+        for _, dirnames, _ in os.walk(path_dataset_split):
+            folders += len(dirnames) 
 
-            """with open(path_clip + "/PRE_CLIP_feature_clip_3.pkl", 'wb') as f:
-                pickle.dump(features, f)"""
-            
-            actions[path_clip + "/PRE_CLIP_feature_clip_3.pkl"] = values
+        data = {}
+        data["Set"] = split
+        actions = {}
+        
+        for i in range(folders):
+            path_clip = path_dataset_split + "/action_" + str(i)
 
-    data["Actions"] = actions
-    with open("predictions" + split + "_clip.json", "w") as outfile: 
-        outfile.write(json.dumps(data, indent=4))
+            print(path_clip)
 
-            
+            if os.path.exists(path_clip + "/clip_1.mp4"):  
+                features, values = get_features(path_clip + "/clip_1.mp4")
+
+                with open(path_clip + "/PRE_CLIP_feature_clip_1.pkl", 'wb') as f:
+                    pickle.dump(features, f)
+
+                actions[path_clip + "/PRE_CLIP_feature_clip_1.pkl"] = values
+
+            if os.path.exists(path_clip + "/clip_2.mp4"):  
+                features, values = get_features(path_clip + "/clip_2.mp4")
+
+                with open(path_clip + "/PRE_CLIP_feature_clip_2.pkl", 'wb') as f:
+                    pickle.dump(features, f)
+                
+                actions[path_clip + "/PRE_CLIP_feature_clip_2.pkl"] = values
+
+            if os.path.exists(path_clip + "/clip_3.mp4"):  
+                features, values = get_features(path_clip + "/clip_3.mp4")
+
+                with open(path_clip + "/PRE_CLIP_feature_clip_3.pkl", 'wb') as f:
+                    pickle.dump(features, f)
+                
+                actions[path_clip + "/PRE_CLIP_feature_clip_3.pkl"] = values
+
+        data["Actions"] = actions
+        with open("predictions" + split + "_clip.json", "w") as outfile: 
+            json.dump(data, outfile)  
+
+        
