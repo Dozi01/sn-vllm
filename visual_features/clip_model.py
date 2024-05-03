@@ -68,7 +68,7 @@ if __name__ == "__main__":
     Clip_model = CLIPNetwork().cuda()
     B = 16
     H = 224
-    W = 224
+    W = 224 
     C = 3
     x = torch.randn(B, C, H, W)
     x = x.cuda()
